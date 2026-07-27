@@ -54,10 +54,11 @@ auto-compact-and-retry, or process queued follow-ups after `agent_end`. Only
 |---|---|
 | Option scope | **pane-local** — `tmux set-option -p` on `$TMUX_PANE`; each pi pane tracks independently |
 | Options written | `@agent_state` (`working` \| `idle`), `@agent_spinner` (braille glyph), `@agent_tool` (tool name or empty) |
-| Spinner animation | `setInterval` ~80ms cycling `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`, writes `@agent_spinner` + `tmux refresh-client -S` (throttled to ≤~12/s) while `working`; stopped on `idle` |
-| Status bar readout | user wires a shipped format snippet into `status-left`; reads `@agent_state`/`@agent_spinner`/`@agent_tool` via `#{?#{==:#{@agent_state},working},…,…}` conditionals |
-| Window tab readout | `window-status-current-format` snippet prefixes the active window with the colored glyph |
-| Repaint | `refresh-client -S` per animation frame; global `status-interval` untouched |
+| Spinner motion | **Transition-driven** (default): the braille frame advances on each `agent_start` / `tool_execution_start` / `tool_execution_end` / `agent_settled` event — i.e. the glyph steps forward each time pi does work, not on a wall-clock timer. `tmux refresh-client -S` is called **only on these state transitions, throttled to ≤~2/s**. While `idle` the extension is **fully inert** — no timers, no refreshes, the user's bar is byte-identical to a machine without the extension. Smooth 12fps animation is an **opt-in mode** (see §10) that the user enables by lowering their own `status-interval`; the extension never lowers it for them. |
+| Status bar readout | user **opts in** by appending a shipped format segment to their own `status-left` (`set -ga status-left "#{@agent_status_format}"`); reads `@agent_state`/`@agent_spinner`/`@agent_tool` via conditionals. The snippet **defines** `@agent_status_format` but **never sets `status-left`/`-right`/`window-status-*`** itself. |
+| Window tab readout | user opts in by pasting `#{@agent_window_tab}` into their own `window-status-current-format`; the snippet never sets that option. |
+| Repaint | `refresh-client -S` **only on state transitions, throttled ≤2/s**; **zero while idle**. `status-interval` and all `#(...)` script cadences are left at the user's existing values. |
+| **Never touched (non-breakage)** | `status-interval`, `status-left`, `status-right`, `window-status-format`, `window-status-current-format`, `status-position`, `status-style`, and every `@thm_*` / `@catppuccin_*` theme option. The extension writes **only** pane-local `@agent_state` / `@agent_spinner` / `@agent_tool` via `set-option -p`. |
 | Colors (catppuccin macchiato) | `working` → green `#a6da95`; `idle` → overlay_0 `#6e738d`; separators → overlay_0 |
 | Glyphs | `working` = animated braille; `idle` = `◉` |
 
@@ -81,7 +82,8 @@ into their `.tmux.conf`. v1 does not auto-patch config.
 ```
 @getpipher/agent-status/
 ├── extensions/agent-status.ts   # pi extension: event listeners + state reducer + spinner timer
-├── lib/tmux.ts                  # tmux CLI helper: set-option -p, refresh-client -S, pane id, no-op guards, throttle
+├── lib/spinner.ts                 # pure braille frame advancer: frameAt(i) + advance-on-demand Spinner (NO setInterval in default path; opt-in smooth mode adds a timer)
+├── lib/tmux.ts                    # tmux CLI helper: set-option -p, refresh-client -S (transition-throttled), pane id, no-op guards, never touches global options
 ├── tmux/agent-status.tmux       # opt-in format snippet for status-left + window-status-current-format
 ├── test/
 │   ├── tmux.test.ts             # mocked tmux CLI: option writes, pane-id, refresh throttle, no-op when unset
@@ -97,14 +99,9 @@ into their `.tmux.conf`. v1 does not auto-patch config.
 
 ### Unit boundaries
 
-- **`lib/tmux.ts`** — one job: talk to tmux CLI safely. No pi knowledge. Exports
-  `setEnabled`, `setState(pane, state, tool?)`, `setSpinner(pane, glyph)`,
-  `clear(pane)`, `startSpinner(pane, onTick)`, `stopSpinner()`. All swallow
-  errors; all no-op when `$TMUX_PANE` unset or `HERDR_ENV=1` or `tmux` missing.
-- **`extensions/agent-status.ts`** — one job: map pi events to `lib/tmux.ts`
-  calls. Holds the working/idle reducer state per session. No tmux CLI calls
-  directly.
-- **`tmux/agent-status.tmux`** — one job: format strings. No logic.
+- **`lib/spinner.ts`** — one job: braille frame math. Exports `frameAt(i)` and a `Spinner` that advances a frame on `.advance()` (writes via an injected callback). **No `setInterval` in the default path** — the extension calls `.advance()` on state transitions. An opt-in `startSmooth()`/`stopSmooth()` may add a timer for the documented smooth-animation mode.
+- **`lib/tmux.ts`** — one job: talk to tmux CLI safely, fail-fast. Exports `setState`, `setSpinner`, `clear`, `refreshStatus` (transition-throttled), env guards. **Never writes a global option** — only `set-option -p` for `@agent_*`. All swallow errors; all no-op when `$TMUX_PANE` unset or `HERDR_ENV=1` or `tmux` missing.
+- **`extensions/agent-status.ts`** — one job: map pi events → reducer → tmux writes + spinner frame advance. Calls `refreshStatus` only on state transitions (throttled ≤2/s). No tmux CLI directly. Fully inert while idle.
 
 ### Data flow
 
@@ -149,8 +146,7 @@ Coverage target: 80%+ on new code (per global standard).
 
 ## 10. Open questions for implementation plan
 
-- Exact throttle rate for `refresh-client -S` (12/s is a placeholder; verify no
-  visible flicker / CPU cost on a long run).
-- Whether `@agent_tool` should show the *raw* tool name or a friendlier label
-  (`bash` vs ` Bash`). Default: raw, lowercased.
+- **Empirically confirm `refresh-client -S` re-run behavior** (whether it re-runs status `#(...)` scripts). The default design is safe **under both interpretations** (transition-only refresh minimizes impact if it does re-run; if it doesn't, transition-only still works). Smooth 12fps mode is opt-in precisely because it assumes the user accepts the script-cadence tradeoff.
+- **Smooth-animation opt-in**: provide a documented mode where the extension runs a `setInterval` (~80ms) writing `@agent_spinner` + `refresh-client -S`, **and** the user lowers their own `status-interval` to ~1. Off by default. v1 ships transition-driven only; smooth mode can land in v1.1.
+- Whether `@agent_tool` shows the raw tool name or a friendlier label (`bash` vs ` Bash`). Default: raw, lowercased.
 - Snippet placement guidance for non-catppuccin users (provide a plain variant).
