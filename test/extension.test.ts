@@ -10,7 +10,7 @@ interface FakePi {
 }
 function fakePi(): FakePi {
   const handlers = new Map<string, Handler>();
-  return { on: (n, h) => handlers.set(n, h), handlers } as unknown as FakePi;
+  return { on: (n: string, h: Handler) => handlers.set(n, h), handlers } as unknown as FakePi;
 }
 
 function setup(pane = "p0") {

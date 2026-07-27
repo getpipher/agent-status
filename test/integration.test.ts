@@ -28,7 +28,7 @@ let sessCounter = 0;
 async function newSession(name: string): Promise<string> {
   const sess = `${name}-${++sessCounter}`;
   await tmuxCmd(["new", "-d", "-s", sess]);
-  const pane = (await tmuxCmd(["list-panes", "-t", sess, "-F", "#{pane_id}"])).trim().split("\n")[0];
+  const pane = (await tmuxCmd(["list-panes", "-t", sess, "-F", "#{pane_id}"])).trim().split("\n")[0]!;
   return pane;
 }
 

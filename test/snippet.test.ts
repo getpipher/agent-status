@@ -32,7 +32,7 @@ async function newSession(name: string): Promise<string> {
   const sess = `${name}-${++sessCounter}`;
   await tmux(["new", "-d", "-s", sess]);
   // Return the first pane id of the session
-  const pane = (await tmux(["list-panes", "-t", sess, "-F", "#{pane_id}"])).trim().split("\n")[0];
+  const pane = (await tmux(["list-panes", "-t", sess, "-F", "#{pane_id}"])).trim().split("\n")[0] ?? "";
   return pane;
 }
 
@@ -71,7 +71,7 @@ test("non-regression: snippet changes NO existing global status/theme option", a
     const allowed = new Set(["@agent_status_format", "@agent_window_tab"]);
     for (const line of after) {
       if (beforeSet.has(line)) continue;
-      const key = line.split(" ")[0].replace(/^"|"$/g, "");
+      const key = (line.split(" ")[0] ?? "").replace(/^"|"$/g, "");
       assert.ok(allowed.has(key), `snippet added an unexpected global option: ${line}`);
     }
   } finally {

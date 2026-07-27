@@ -5,8 +5,8 @@ import { reduce, IDLE, type StateSnapshot } from "../lib/state.ts";
 
 export default function agentStatus(pi: ExtensionAPI): void {
   if (!tmux.enabled()) return;
-  const pane = tmux.paneId();
-  if (!pane) return;
+  const paneId: string = tmux.paneId() ?? "";
+  if (!paneId) return;
 
   let snap: StateSnapshot = IDLE;
   const spinner = createSpinner();
@@ -22,13 +22,13 @@ export default function agentStatus(pi: ExtensionAPI): void {
   async function publish(next: StateSnapshot): Promise<void> {
     if (next.state === snap.state && next.tool === snap.tool) return;
     snap = next;
-    await tmux.setState(pane, snap.state, snap.tool);
+    await tmux.setState(paneId, snap.state, snap.tool);
     if (snap.state === "working") {
-      await tmux.setSpinner(pane, spinner.advance());
+      await tmux.setSpinner(paneId, spinner.advance());
     } else {
       spinner.reset();
     }
-    await tmux.refreshStatus(pane); // throttled; no-op if within REFRESH_MIN_MS
+    await tmux.refreshStatus(paneId); // throttled; no-op if within REFRESH_MIN_MS
   }
 
   pi.on("session_start", async (_e, ctx) => {
@@ -51,7 +51,7 @@ export default function agentStatus(pi: ExtensionAPI): void {
     const reason = (e as any)?.reason ?? "quit";
     if (reason === "quit") {
       spinner.reset();
-      await tmux.clear(pane);
+      await tmux.clear(paneId);
       snap = IDLE;
     } else {
       // reload/new/resume/fork: the extension runtime rebinds; don't clear.

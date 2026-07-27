@@ -1,7 +1,7 @@
 export const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 
 export function frameAt(i: number): string {
-  return FRAMES[((i % FRAMES.length) + FRAMES.length) % FRAMES.length];
+  return FRAMES[((i % FRAMES.length) + FRAMES.length) % FRAMES.length]!;
 }
 
 export interface Spinner {
