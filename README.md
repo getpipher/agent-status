@@ -19,7 +19,7 @@ herdr, this extension defers to herdr's own pi integration.
 v0.1.0 — spec stage. See
 [`docs/superpowers/specs/2026-07-27-agent-status-tmux-design.md`](docs/superpowers/specs/2026-07-27-agent-status-tmux-design.md).
 
-## Install (planned)
+## Install
 
 Add to `~/.pi/agent/settings.json` `packages`:
 
@@ -27,11 +27,24 @@ Add to `~/.pi/agent/settings.json` `packages`:
 "npm:@getpipher/agent-status"
 ```
 
-Then source the tmux format snippet in `~/.tmux.conf`:
+Source the tmux format snippet in `~/.tmux.conf` and append it to your status-left:
 
 ```tmux
-run-shell ~/local-dev/getpipher/agent-status/tmux/agent-status.tmux
+source-file ~/local-dev/getpipher/agent-status/tmux/agent-status.tmux
+set -ga status-left "#{@agent_status_format}"
 ```
+
+For the active window tab, insert `#{@agent_window_tab}` into your **existing**
+`window-status-current-format` (do NOT replace your format — merge the segment).
+For example, if your current format is `" #I:#W "`, adapt it to:
+
+```tmux
+set -g window-status-current-format " #I#{@agent_window_tab}#W "
+```
+
+Reload tmux (`prefix + r` or `tmux source ~/.tmux.conf`). When a pi agent runs in a
+tmux pane, the bar shows `⠼ working · <tool>` (animated) while it works and `◉ idle`
+when settled.
 
 ## License
 
