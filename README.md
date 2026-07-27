@@ -16,8 +16,7 @@ herdr, this extension defers to herdr's own pi integration.
 
 ## Status
 
-v0.1.0 — spec stage. See
-[`docs/superpowers/specs/2026-07-27-agent-status-tmux-design.md`](docs/superpowers/specs/2026-07-27-agent-status-tmux-design.md).
+v0.1.0 — implements working/idle + animated (transition-driven) braille spinner + current tool name. Pane-local only; never touches your global tmux options. See the [design spec](docs/superpowers/specs/2026-07-27-agent-status-tmux-design.md).
 
 ## Install
 
