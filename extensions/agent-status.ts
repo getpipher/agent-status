@@ -31,6 +31,9 @@ export default function agentStatus(pi: ExtensionAPI): void {
 
   pi.on("session_start", async (_e, ctx) => {
     if (ctx?.hasUI !== true) return;
+    // Defensive: clear any session-scoped @agent_window_state (v0.2.0 leftover)
+    // so this pane's window-scoped state is authoritative.
+    await tmux.clearSessionWindowState(paneId);
     await publish(reduce(snap, { type: "session_start", isIdle: isIdle(ctx) }));
   });
   pi.on("agent_start", async () => { await publish(reduce(snap, { type: "agent_start" })); });
