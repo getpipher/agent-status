@@ -23,4 +23,4 @@
 #   set -g window-status-current-format "#{E:#{@agent_window_dot}} #I:#W"
 #   set -g window-status-format         "#{E:#{@agent_window_dot}} #I:#W"
 
-set -g @agent_window_dot "#{?#{@agent_window_state},#{?#{==:#{@agent_window_state},working},#[fg=#{@thm_green}]● ,#{?#{==:#{@agent_window_state},mixed},#[fg=#{@thm_yellow}]● ,#[fg=#{@thm_overlay_0}]● }},}"
+set -g @agent_window_dot "#{?#{@agent_window_state},#{?#{==:#{@agent_window_state},working},#[fg=#{@thm_green}]●#[fg=default] ,#{?#{==:#{@agent_window_state},mixed},#[fg=#{@thm_yellow}]●#[fg=default] ,#[fg=#{@thm_overlay_0}]●#[fg=default] }},}"
