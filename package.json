@@ -1,23 +1,53 @@
 {
   "name": "@getpipher/agent-status",
-  "version": "0.1.0",
-  "description": "Pi coding-agent lifecycle state as a live spinner in your tmux status bar — working / idle at a glance, per pane.",
-  "keywords": ["pi-package", "pi-extension", "tmux", "tmux-status-bar", "agent-status", "coding-agent", "terminal", "developer-tools", "catppuccin"],
+  "version": "0.1.1",
+  "description": "Pi coding-agent lifecycle state as a live spinner in your tmux status bar \u2014 working / idle at a glance, per pane.",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "tmux",
+    "tmux-status-bar",
+    "agent-status",
+    "coding-agent",
+    "terminal",
+    "developer-tools",
+    "catppuccin"
+  ],
   "license": "MIT",
   "author": "RECTOR <rector@rectorspace.com>",
   "homepage": "https://github.com/getpipher/agent-status",
-  "repository": { "type": "git", "url": "https://github.com/getpipher/agent-status.git" },
-  "bugs": { "url": "https://github.com/getpipher/agent-status/issues" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/getpipher/agent-status.git"
+  },
+  "bugs": {
+    "url": "https://github.com/getpipher/agent-status/issues"
+  },
   "type": "module",
-  "engines": { "node": ">=20" },
-  "pi": { "extensions": ["./extensions/agent-status.ts"] },
-  "files": ["extensions", "lib", "tmux", "README.md", "LICENSE"],
+  "engines": {
+    "node": ">=20"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/agent-status.ts"
+    ]
+  },
+  "files": [
+    "extensions",
+    "lib",
+    "tmux",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "tsx --test",
     "test:run": "tsx --test"
   },
-  "peerDependencies": { "@earendil-works/pi-coding-agent": "*", "typebox": "*" },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "@getpipher/term": "*",

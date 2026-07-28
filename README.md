@@ -30,15 +30,15 @@ Source the tmux format snippet in `~/.tmux.conf` and append it to your status-le
 
 ```tmux
 source-file ~/local-dev/getpipher/agent-status/tmux/agent-status.tmux
-set -ga status-left "#{@agent_status_format}"
+set -ga status-left "#{E:#{@agent_status_format}}"
 ```
 
-For the active window tab, insert `#{@agent_window_tab}` into your **existing**
+For the active window tab, insert `#{E:#{@agent_window_tab}}` into your **existing**
 `window-status-current-format` (do NOT replace your format — merge the segment).
 For example, if your current format is `" #I:#W "`, adapt it to:
 
 ```tmux
-set -g window-status-current-format " #I#{@agent_window_tab}#W "
+set -g window-status-current-format " #I#{E:#{@agent_window_tab}}#W "
 ```
 
 Reload tmux (`prefix + r` or `tmux source ~/.tmux.conf`). When a pi agent runs in a
