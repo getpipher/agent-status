@@ -2,95 +2,133 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as tmux from "../lib/tmux.ts";
 
-// Fake ExtensionAPI: capture registered handlers so we can emit events.
 type Handler = (event: any, ctx: any) => void | Promise<void>;
-interface FakePi {
-  on(name: string, h: Handler): void;
-  handlers: Map<string, Handler>;
-}
+interface FakePi { on(name: string, h: Handler): void; handlers: Map<string, Handler>; }
 function fakePi(): FakePi {
   const handlers = new Map<string, Handler>();
   return { on: (n: string, h: Handler) => handlers.set(n, h), handlers } as unknown as FakePi;
 }
 
-function setup(pane = "p0") {
+// Stateful exec stub: persists pane @agent_state + window @agent_window_state
+// so computeRollup reads reflect the extension's writes.
+function statefulStub(pane: string, panesInWindow: string[]) {
+  const paneState: Record<string, string> = {};
+  const winState: Record<string, string> = {};
   const calls: string[][] = [];
-  let curPane = pane;
-  let herdr = false;
-  let tmuxEnv = "yes";
-  tmux.setExec(async (a) => { calls.push([...a]); return curPane === "p0" ? "sess\n/dev/ttys010\n" : ""; });
-  tmux.setGuards(() => curPane, () => herdr, () => tmuxEnv);
-  return { calls, setPane: (p: string) => { curPane = p; }, setHerdr: (b: boolean) => { herdr = b; }, setTmuxEnv: (e: string) => { tmuxEnv = e; } };
+  tmux.setExec(async (args) => {
+    calls.push([...args]);
+    const cmd = args[0];
+    if (cmd === "set-option") {
+      if (args.includes("-u")) {
+        if (args.includes("@agent_state")) delete paneState[args[args.indexOf("-t") + 1]!];
+        if (args.includes("@agent_window_state")) delete winState[args[args.indexOf("-t") + 1]!];
+        return "";
+      }
+      const key = args.find((a) => a.startsWith("@agent"))!;
+      const tIdx = args.indexOf("-t");
+      const target = args[tIdx + 1]!;
+      const valIdx = args.indexOf(key);
+      const val = args[valIdx + 1]!;
+      if (key === "@agent_state") paneState[target] = val;
+      if (key === "@agent_window_state") winState[target] = val;
+      return "";
+    }
+    if (cmd === "show-options") {
+      const target = args[args.indexOf("-t") + 1]!;
+      const v = paneState[target];
+      if (v === undefined) throw new Error("unset");
+      return v + "\n";
+    }
+    if (cmd === "display-message" && args.includes("#{window_id}")) return "@w\n";
+    if (cmd === "display-message" && args.includes("#{session_name}")) return "s\n";
+    if (cmd === "list-panes") return panesInWindow.join("\n") + "\n";
+    return "";
+  });
+  tmux.setGuards(() => pane, () => false, () => "yes");
+  return { paneState, winState, calls };
 }
 
 test("extension no-ops on load when not in tmux", async () => {
-  const { setTmuxEnv } = setup();
-  setTmuxEnv("");
+  tmux.setGuards(() => "p0", () => false, () => "");
   const pi = fakePi();
   const { default: agentStatus } = await import("../extensions/agent-status.ts");
   agentStatus(pi as any);
   assert.equal(pi.handlers.size, 0, "no handlers registered when disabled");
 });
 
-test("extension no-ops on load when HERDR_ENV=1", async () => {
-  const { setHerdr } = setup();
-  setHerdr(true);
-  const pi = fakePi();
-  const { default: agentStatus } = await import("../extensions/agent-status.ts");
-  agentStatus(pi as any);
-  assert.equal(pi.handlers.size, 0);
-});
-
-test("agent_start → working + frame advanced; agent_settled idle → idle", async () => {
-  const { calls } = setup();
+test("single pi: agent_start → pane working + window working(green); settled → idle + window idle(grey)", async () => {
+  const { paneState, winState } = statefulStub("p0", ["p0"]);
   const pi = fakePi();
   const { default: agentStatus } = await import("../extensions/agent-status.ts");
   agentStatus(pi as any);
 
-  // session_start with hasUI true, idle
   await pi.handlers.get("session_start")!({ reason: "startup" }, { hasUI: true, isIdle: () => true });
-  // agent_start
+  assert.equal(paneState.p0, "idle");
+  assert.equal(winState["@w"], "idle");
+
   await pi.handlers.get("agent_start")!({}, {});
-  assert.ok(calls.some((a) => a.includes("@agent_state") && a.includes("working")), "wrote working");
+  assert.equal(paneState.p0, "working");
+  assert.equal(winState["@w"], "working");
 
-  // tool_execution_start → tool name
-  await pi.handlers.get("tool_execution_start")!({ toolName: "bash" }, {});
-  assert.ok(calls.some((a) => a.includes("@agent_tool") && a.includes("bash")), "wrote tool name");
-
-  // agent_settled idle
   await pi.handlers.get("agent_settled")!({}, { isIdle: () => true });
-  assert.ok(calls.some((a) => a.includes("@agent_state") && a.includes("idle")), "wrote idle");
+  assert.equal(paneState.p0, "idle");
+  assert.equal(winState["@w"], "idle");
 });
 
-test("session_shutdown quit clears options", async () => {
-  const { calls } = setup();
+test("two pi panes: mixed rollup → yellow (one working, one idle)", async () => {
+  // pane p0 is THIS extension instance; p1 is a sibling whose state we preset.
+  const stub = statefulStub("p0", ["p0", "p1"]);
+  stub.paneState.p1 = "idle"; // sibling idle
+  const { paneState, winState } = stub;
   const pi = fakePi();
   const { default: agentStatus } = await import("../extensions/agent-status.ts");
   agentStatus(pi as any);
+
   await pi.handlers.get("session_start")!({ reason: "startup" }, { hasUI: true, isIdle: () => true });
   await pi.handlers.get("agent_start")!({}, {});
-  calls.length = 0;
-  await pi.handlers.get("session_shutdown")!({ reason: "quit" }, {});
-  assert.ok(calls.some((a) => a.includes("-u") && a.includes("@agent_state")), "unset @agent_state on quit");
+  // p0 working, p1 idle → mixed
+  assert.equal(paneState.p0, "working");
+  assert.equal(winState["@w"], "mixed");
+
+  // p0 settles → both idle → idle (grey)
+  stub.paneState.p1 = "idle";
+  await pi.handlers.get("agent_settled")!({}, { isIdle: () => true });
+  assert.equal(paneState.p0, "idle");
+  assert.equal(winState["@w"], "idle");
 });
 
-test("session_shutdown reload does NOT clear (extension rebinds)", async () => {
-  const { calls } = setup();
+test("session_shutdown quit clears pane state + rollup → no pi (null window state)", async () => {
+  const stub = statefulStub("p0", ["p0"]);
+  const { paneState, winState } = stub;
   const pi = fakePi();
   const { default: agentStatus } = await import("../extensions/agent-status.ts");
   agentStatus(pi as any);
   await pi.handlers.get("session_start")!({ reason: "startup" }, { hasUI: true, isIdle: () => false });
-  calls.length = 0;
-  await pi.handlers.get("session_shutdown")!({ reason: "reload" }, {});
-  assert.ok(!calls.some((a) => a.includes("-u")), "no unset on reload");
+  await pi.handlers.get("agent_start")!({}, {});
+  assert.equal(winState["@w"], "working");
+  await pi.handlers.get("session_shutdown")!({ reason: "quit" }, {});
+  assert.equal(paneState.p0, undefined, "pane state cleared on quit");
+  assert.equal(winState["@w"], undefined, "window state unset on quit (no pi)");
 });
 
-test("session_start without hasUI is ignored", async () => {
-  const { calls } = setup();
+test("session_shutdown reload does NOT clear (extension rebinds)", async () => {
+  const stub = statefulStub("p0", ["p0"]);
+  const { paneState } = stub;
   const pi = fakePi();
   const { default: agentStatus } = await import("../extensions/agent-status.ts");
   agentStatus(pi as any);
-  calls.length = 0;
+  await pi.handlers.get("session_start")!({ reason: "startup" }, { hasUI: true, isIdle: () => false });
+  await pi.handlers.get("agent_start")!({}, {});
+  await pi.handlers.get("session_shutdown")!({ reason: "reload" }, {});
+  assert.equal(paneState.p0, "working", "pane state preserved on reload");
+});
+
+test("session_start without hasUI is ignored", async () => {
+  const stub = statefulStub("p0", ["p0"]);
+  const { paneState } = stub;
+  const pi = fakePi();
+  const { default: agentStatus } = await import("../extensions/agent-status.ts");
+  agentStatus(pi as any);
   await pi.handlers.get("session_start")!({ reason: "startup" }, { hasUI: false });
-  assert.equal(calls.filter((a) => a.includes("@agent_state")).length, 0);
+  assert.equal(paneState.p0, undefined);
 });

@@ -1,22 +1,39 @@
 # @getpipher/agent-status
 
-> Pi coding-agent lifecycle state as a live spinner in your tmux status bar — working / idle at a glance, per pane.
+> Pi coding-agent lifecycle state as a **colored dot in your tmux window tab** — at-a-glance across all your pi windows, no polling.
 
 A [pi coding-agent](https://github.com/earendil-works/pi-coding-agent) extension
-that listens to pi lifecycle events (`agent_start`, `agent_settled`,
-`tool_execution_start`) and writes agent state to **tmux pane-local user
-options** (`@agent_state`, `@agent_spinner`, `@agent_tool`). Your tmux status
-bar and active window tab render them as a live, animated spinner — so when a
-pi agent is running inside a tmux window, you see it working at a glance,
-without polling every terminal.
+that listens to pi lifecycle events and writes a **per-window rollup** of all
+pi panes' state to a tmux window-scoped option, rendered as a single colored
+dot in the window tab. No animation → no extra status-bar redraws → your
+existing `#(...)` status scripts keep their normal cadence.
 
-Inspired by [herdr](https://herdr.dev)'s per-pane agent-state spinner, but
-targets your **existing tmux** instead of herdr's sidebar. When pi runs under
-herdr, this extension defers to herdr's own pi integration.
+Inspired by [herdr](https://herdr.dev)'s per-pane state indicator, but targets
+your **existing tmux** (window tabs) instead of herdr's sidebar. When pi runs
+under herdr, this extension defers to herdr's own pi integration.
+
+## The dot
+
+A `●` prefixed before the window number — **color-only, no text, no spinner**:
+
+| window contains | dot |
+|---|---|
+| no pi pane | (no dot) |
+| all pi panes working | 🟢 green |
+| mixed (some working, some idle) | 🟡 yellow |
+| all pi panes idle | ⚪ grey |
+
+e.g. window `3: getpipher` with one pi working + one pi idle → `● 3: getpipher` (yellow).
 
 ## Status
 
-v0.1.0 — implements working/idle + animated (transition-driven) braille spinner + current tool name. Pane-local only; never touches your global tmux options. See the [design spec](docs/superpowers/specs/2026-07-27-agent-status-tmux-design.md).
+v0.2.0 — window-tab dot + per-window rollup (green/yellow/grey/none). Replaces
+the v0.1.x status-left spinner (which cost status-script re-runs). Non-breaking:
+the extension writes only pane-local `@agent_state` + window-scoped
+`@agent_window_state`; the snippet defines one new user option `@agent_window_dot`
+and never sets `status-left`/`window-status-*` — you merge the dot into your own
+window-status format. See the [design spec](docs/superpowers/specs/2026-07-27-agent-status-tmux-design.md)
+and [v0.2 plan](docs/superpowers/plans/2026-07-28-window-dot-rollup.md).
 
 ## Install
 
@@ -26,24 +43,20 @@ Add to `~/.pi/agent/settings.json` `packages`:
 "npm:@getpipher/agent-status"
 ```
 
-Source the tmux format snippet in `~/.tmux.conf` and append it to your status-left:
+Source the tmux snippet in `~/.tmux.conf` and insert the dot at the start of
+your **existing** `window-status-current-format` / `window-status-format`
+(merge, don't replace — preserves your tab layout):
 
 ```tmux
 source-file ~/local-dev/getpipher/agent-status/tmux/agent-status.tmux
-set -ga status-left "#{E:#{@agent_status_format}}"
+set -g window-status-current-format "#{E:#{@agent_window_dot}} #I:#W"
+set -g window-status-format         "#{E:#{@agent_window_dot}} #I:#W"
 ```
 
-For the active window tab, insert `#{E:#{@agent_window_tab}}` into your **existing**
-`window-status-current-format` (do NOT replace your format — merge the segment).
-For example, if your current format is `" #I:#W "`, adapt it to:
-
-```tmux
-set -g window-status-current-format " #I#{E:#{@agent_window_tab}}#W "
-```
-
-Reload tmux (`prefix + r` or `tmux source ~/.tmux.conf`). When a pi agent runs in a
-tmux pane, the bar shows `⠼ working · <tool>` (animated) while it works and `◉ idle`
-when settled.
+Reload tmux (`prefix + r` or `tmux source ~/.tmux.conf`). When a pi agent runs
+in a tmux pane, its window's tab shows a green dot (working); when multiple pi
+panes are in the same window with mixed states, yellow; when all idle, grey;
+when no pi is in the window, no dot.
 
 ## License
 
