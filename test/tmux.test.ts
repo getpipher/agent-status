@@ -131,3 +131,16 @@ test("setWindowState: null rollup unsets the window option", async () => {
     a.includes("-w") && a.includes("-u") && a.includes("@agent_window_state")),
     "unset window-scoped @agent_window_state when rollup null");
 });
+
+test("clearSessionWindowState unsets session-scoped @agent_window_state", async () => {
+  calls.length = 0;
+  tmux.setExec(async (args) => {
+    calls.push([...args]);
+    if (args[0] === "display-message" && args.includes("#{session_name}")) return "rector_space_2\n";
+    return "";
+  });
+  await tmux.clearSessionWindowState("p0");
+  assert.ok(argsFor("set-option").some((a) =>
+    a.includes("-u") && a.includes("@agent_window_state") && a.includes("rector_space_2")),
+    "unset session-scoped @agent_window_state (v0.2.0 leftover defense)");
+});

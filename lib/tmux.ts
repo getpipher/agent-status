@@ -65,6 +65,22 @@ async function windowId(pane: string): Promise<string | undefined> {
   catch { return undefined; }
 }
 
+async function sessionName(pane: string): Promise<string | undefined> {
+  if (!enabled()) return undefined;
+  try { return (await exec(["display-message", "-p", "-t", pane, "#{session_name}"])).trim(); }
+  catch { return undefined; }
+}
+
+// Defensive: clear any SESSION-scoped @agent_window_state so the window-scoped
+// value (set by setWindowState with -w) is authoritative. v0.2.0 set this at
+// session scope; v0.2.1+ (with -w) doesn't write session scope but also didn't
+// clear leftovers, causing "dots on all windows" for upgraders from v0.2.0.
+// Called on session_start.
+export async function clearSessionWindowState(pane: string): Promise<void> {
+  const s = await sessionName(pane);
+  if (s) await run(["set-option", "-u", "-t", s, "@agent_window_state"]);
+}
+
 async function paneStates(pane: string): Promise<AgentState[]> {
   if (!enabled()) return [];
   try {
