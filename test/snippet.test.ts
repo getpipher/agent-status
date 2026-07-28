@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import * as tmuxLib from "../lib/tmux.ts";
 
 const snippetPath = path.resolve(fileURLToPath(import.meta.url), "../../tmux/agent-status.tmux");
 
@@ -31,29 +30,32 @@ let sessCounter = 0;
 async function newSession(name: string): Promise<string> {
   const sess = `${name}-${++sessCounter}`;
   await tmux(["new", "-d", "-s", sess]);
-  const pane = (await tmux(["list-panes", "-t", sess, "-F", "#{pane_id}"])).trim().split("\n")[0] ?? "";
-  return pane;
+  return (await tmux(["list-panes", "-t", sess, "-F", "#{pane_id}"])).trim().split("\n")[0] ?? "";
 }
 
 async function killSession(pane: string): Promise<void> {
   try {
     const sess = (await tmux(["display-message", "-p", "-t", pane, "#{session_name}"])).trim();
     await tmux(["kill-session", "-t", sess]);
-  } catch { /* best-effort cleanup */ }
+  } catch { /* best-effort */ }
 }
 
-test("snippet sources without error in a detached tmux session", async () => {
+async function windowId(pane: string): Promise<string> {
+  return (await tmux(["display-message", "-p", "-t", pane, "#{window_id}"])).trim();
+}
+
+test("snippet sources without error and defines @agent_window_dot", async () => {
   const pane = await newSession("snippet-smoke");
   try {
     await tmux(["source-file", "-t", pane, snippetPath]);
-    const fmt = await tmux(["show-options", "-g", "@agent_status_format"]);
-    assert.ok(fmt.includes("@agent_status_format"), "snippet defined @agent_status_format");
+    const fmt = await tmux(["show-options", "-g", "@agent_window_dot"]);
+    assert.ok(fmt.includes("@agent_window_dot"), "snippet defined @agent_window_dot");
   } finally {
     await killSession(pane);
   }
 });
 
-test("non-regression: snippet changes NO existing global status/theme option", async () => {
+test("non-regression: snippet changes NO existing global option (only @agent_window_dot added)", async () => {
   const pane = await newSession("nonreg");
   try {
     const snap = (await tmuxRead(["show-options", "-g", "-t", pane])).split("\n").filter(Boolean);
@@ -64,70 +66,45 @@ test("non-regression: snippet changes NO existing global status/theme option", a
     for (const line of snap) {
       assert.ok(afterSet.has(line), `existing option changed/removed: ${line}`);
     }
-    const allowed = new Set(["@agent_status_format", "@agent_window_tab"]);
     for (const line of after) {
       if (beforeSet.has(line)) continue;
       const key = (line.split(" ")[0] ?? "").replace(/^"|"$/g, "");
-      assert.ok(allowed.has(key), `snippet added an unexpected global option: ${line}`);
+      assert.equal(key, "@agent_window_dot", `snippet added an unexpected global option: ${line}`);
     }
   } finally {
     await killSession(pane);
   }
 });
 
-test("non-regression: extension writes ONLY pane-local @agent_* options, never global", async () => {
-  const pane = await newSession("nonreg-ext");
-  try {
-    const before = (await tmuxRead(["show-options", "-g", "-t", pane])).trim();
-    tmuxLib.setExec(tmuxLib.defaultTmuxExec);
-    tmuxLib.setGuards(() => pane, () => false, () => "yes");
-    await tmuxLib.setState(pane, "working", "bash");
-    await tmuxLib.setSpinner(pane, "⠼");
-    await tmuxLib.refreshStatus(pane);
-    const after = (await tmuxRead(["show-options", "-g", "-t", pane])).trim();
-    assert.equal(after, before, "extension changed a global option — must be pane-local only");
-    const pstate = (await tmuxRead(["show-options", "-p", "-t", pane, "@agent_state"])).trim();
-    assert.match(pstate, /working/);
-  } finally {
-    await killSession(pane);
-  }
-});
-
-// Regression test for v0.1.0 bug: the format used comma-separated #[...] style
-// blocks inside #{?cond,then,else} branches, whose commas tmux parsed as branch
-// delimiters — so the segment rendered the literal format text instead of a
-// state. Also: options are session-scoped (not -g) so test runs never pollute
-// the user's live global @agent_* / @thm_* options.
-test("format-expand: #{E:#{@agent_status_format}} renders correctly across unset/working/idle", async () => {
+test("#{E:#{@agent_window_dot}} renders green/yellow/grey/none across states", async () => {
   const pane = await newSession("snippet-expand");
   const sess = (await tmux(["display-message", "-p", "-t", pane, "#{session_name}"])).trim();
+  const win = await windowId(pane);
   try {
-    // catppuccin tokens the snippet references (bare session has no theme).
-    await tmux(["set-option", "-t", sess, "@thm_bg", "#24273a"]);
-    await tmux(["set-option", "-t", sess, "@thm_overlay_0", "#6e738d"]);
     await tmux(["set-option", "-t", sess, "@thm_green", "#a6da95"]);
+    await tmux(["set-option", "-t", sess, "@thm_yellow", "#eed49f"]);
+    await tmux(["set-option", "-t", sess, "@thm_overlay_0", "#6e738d"]);
     await tmux(["source-file", "-t", pane, snippetPath]);
 
-    // UNSET → segment hidden (neither working nor idle visible)
-    const unset = await tmux(["display-message", "-p", "-t", pane, "#{E:#{@agent_status_format}}"]);
-    assert.doesNotMatch(unset, /working|idle/, "unset → segment hidden");
+    // working → green dot
+    await tmux(["set-option", "-t", win, "@agent_window_state", "working"]);
+    let r = await tmux(["display-message", "-p", "-t", pane, "#{E:#{@agent_window_dot}}"]);
+    assert.match(r, /#a6da95.*●/, "working → green dot");
 
-    // working → spinner glyph + 'working' + tool name
-    await tmux(["set-option", "-t", sess, "@agent_state", "working"]);
-    await tmux(["set-option", "-t", sess, "@agent_spinner", "⠼"]);
-    await tmux(["set-option", "-t", sess, "@agent_tool", "bash"]);
-    const working = await tmux(["display-message", "-p", "-t", pane, "#{E:#{@agent_status_format}}"]);
-    assert.match(working, /⠼/, "working → spinner glyph rendered");
-    assert.match(working, /working/, "working → 'working' text rendered");
-    assert.match(working, /bash/, "working → tool name rendered");
+    // mixed → yellow dot
+    await tmux(["set-option", "-t", win, "@agent_window_state", "mixed"]);
+    r = await tmux(["display-message", "-p", "-t", pane, "#{E:#{@agent_window_dot}}"]);
+    assert.match(r, /#eed49f.*●/, "mixed → yellow dot");
 
-    // idle → ◉ + 'idle', no 'working'
-    await tmux(["set-option", "-t", sess, "@agent_state", "idle"]);
-    await tmux(["set-option", "-t", sess, "-u", "@agent_tool"]);
-    const idle = await tmux(["display-message", "-p", "-t", pane, "#{E:#{@agent_status_format}}"]);
-    assert.match(idle, /◉/, "idle → ◉ glyph rendered");
-    assert.match(idle, /idle/, "idle → 'idle' text rendered");
-    assert.doesNotMatch(idle, /working/, "idle → no 'working' text");
+    // idle → grey dot
+    await tmux(["set-option", "-t", win, "@agent_window_state", "idle"]);
+    r = await tmux(["display-message", "-p", "-t", pane, "#{E:#{@agent_window_dot}}"]);
+    assert.match(r, /#6e738d.*●/, "idle → grey dot");
+
+    // unset → no dot
+    await tmux(["set-option", "-u", "-t", win, "@agent_window_state"]);
+    r = await tmux(["display-message", "-p", "-t", pane, "#{E:#{@agent_window_dot}}"]);
+    assert.doesNotMatch(r, /●/, "unset → no dot");
   } finally {
     await killSession(pane);
   }

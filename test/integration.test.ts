@@ -1,9 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import * as tmux from "../lib/tmux.ts";
+import * as tmuxLib from "../lib/tmux.ts";
 
-// Direct tmux exec (separate from the lib under test) for session management + read-back.
 async function tmuxCmd(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const p = spawn("tmux", args, { stdio: ["ignore", "pipe", "pipe"] });
@@ -28,54 +27,76 @@ let sessCounter = 0;
 async function newSession(name: string): Promise<string> {
   const sess = `${name}-${++sessCounter}`;
   await tmuxCmd(["new", "-d", "-s", sess]);
-  const pane = (await tmuxCmd(["list-panes", "-t", sess, "-F", "#{pane_id}"])).trim().split("\n")[0]!;
-  return pane;
+  return (await tmuxCmd(["list-panes", "-t", sess, "-F", "#{pane_id}"])).trim().split("\n")[0]!.replace(/[^%0-9]/g, "");
 }
-
 async function killSession(pane: string): Promise<void> {
   try {
     const sess = (await tmuxCmd(["display-message", "-p", "-t", pane, "#{session_name}"])).trim();
     await tmuxCmd(["kill-session", "-t", sess]);
-  } catch { /* best-effort cleanup */ }
+  } catch { /* best-effort */ }
+}
+async function split(pane: string): Promise<string> {
+  return (await tmuxCmd(["split-window", "-t", pane, "-P", "-F", "#{pane_id}"])).trim();
+}
+async function readOpt(target: string, name: string): Promise<string> {
+  return (await tmuxRead(["show-options", "-p", "-t", target, name])).trim();
+}
+async function readWinOpt(win: string, name: string): Promise<string> {
+  return (await tmuxRead(["show-options", "-t", win, name])).trim();
 }
 
-test("setState writes pane-local options readable via tmux show-options -p", async () => {
-  const pane = await newSession("integ-1");
+test("real tmux rollup: two panes working+idle → mixed", async () => {
+  const pane = await newSession("integ-rollup");
   try {
-    tmux.setExec(tmux.defaultTmuxExec);
-    tmux.setGuards(() => pane, () => false, () => "yes");
-    await tmux.setState(pane, "working", "bash");
-    const state = (await tmuxRead(["show-options", "-p", "-t", pane, "@agent_state"])).trim();
-    const tool = (await tmuxRead(["show-options", "-p", "-t", pane, "@agent_tool"])).trim();
-    assert.match(state, /working/);
-    assert.match(tool, /bash/);
+    const p2 = await split(pane);
+    tmuxLib.setExec(tmuxLib.defaultTmuxExec);
+    tmuxLib.setGuards(() => pane, () => false, () => "yes");
+    await tmuxLib.setState(pane, "working");
+    await tmuxLib.setState(p2, "idle");
+    // confirm pane-local writes are readable
+    assert.match(await readOpt(pane, "@agent_state"), /working/);
+    assert.match(await readOpt(p2, "@agent_state"), /idle/);
+    const rollup = await tmuxLib.computeRollup(pane);
+    assert.equal(rollup, "mixed");
   } finally {
     await killSession(pane);
   }
 });
 
-test("clear unsets the pane-local options", async () => {
-  const pane = await newSession("integ-2");
+test("real tmux rollup: single working pane → working", async () => {
+  const pane = await newSession("integ-single");
   try {
-    tmux.setExec(tmux.defaultTmuxExec);
-    tmux.setGuards(() => pane, () => false, () => "yes");
-    await tmux.setState(pane, "working", "read");
-    await tmux.clear(pane);
-    const state = (await tmuxRead(["show-options", "-p", "-t", pane, "@agent_state"])).trim();
-    assert.equal(state, "", "option unset after clear");
+    tmuxLib.setExec(tmuxLib.defaultTmuxExec);
+    tmuxLib.setGuards(() => pane, () => false, () => "yes");
+    await tmuxLib.setState(pane, "working");
+    const rollup = await tmuxLib.computeRollup(pane);
+    assert.equal(rollup, "working");
   } finally {
     await killSession(pane);
   }
 });
 
-test("setSpinner writes @agent_spinner", async () => {
-  const pane = await newSession("integ-3");
+test("real tmux rollup: no pi panes → null", async () => {
+  const pane = await newSession("integ-none");
   try {
-    tmux.setExec(tmux.defaultTmuxExec);
-    tmux.setGuards(() => pane, () => false, () => "yes");
-    await tmux.setSpinner(pane, "⠼");
-    const sp = (await tmuxRead(["show-options", "-p", "-t", pane, "@agent_spinner"])).trim();
-    assert.match(sp, /⠼/);
+    tmuxLib.setExec(tmuxLib.defaultTmuxExec);
+    tmuxLib.setGuards(() => pane, () => false, () => "yes");
+    const rollup = await tmuxLib.computeRollup(pane);
+    assert.equal(rollup, null);
+  } finally {
+    await killSession(pane);
+  }
+});
+
+test("setWindowState writes window-scoped @agent_window_state readable via show-options", async () => {
+  const pane = await newSession("integ-win");
+  try {
+    tmuxLib.setExec(tmuxLib.defaultTmuxExec);
+    tmuxLib.setGuards(() => pane, () => false, () => "yes");
+    await tmuxLib.setState(pane, "working");
+    await tmuxLib.setWindowState(pane, "working");
+    const win = (await tmuxCmd(["display-message", "-p", "-t", pane, "#{window_id}"])).trim();
+    assert.match(await readWinOpt(win, "@agent_window_state"), /working/);
   } finally {
     await killSession(pane);
   }
