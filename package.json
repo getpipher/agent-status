@@ -1,7 +1,7 @@
 {
   "name": "@getpipher/agent-status",
   "version": "0.2.0",
-  "description": "Pi coding-agent lifecycle state as a live spinner in your tmux status bar \u2014 working / idle at a glance, per pane.",
+  "description": "Pi coding-agent lifecycle state as a colored dot in your tmux window tab \u2014 per-window rollup (working/mixed/idle) at a glance, no polling.",
   "keywords": [
     "pi-package",
     "pi-extension",

@@ -49,6 +49,8 @@ your **existing** `window-status-current-format` / `window-status-format`
 
 ```tmux
 source-file ~/local-dev/getpipher/agent-status/tmux/agent-status.tmux
+# Prepend #{E:#{@agent_window_dot}} to YOUR existing window-status formats.
+# The #I:#W below is just a template — keep your own tab layout:
 set -g window-status-current-format "#{E:#{@agent_window_dot}} #I:#W"
 set -g window-status-format         "#{E:#{@agent_window_dot}} #I:#W"
 ```
