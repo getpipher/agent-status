@@ -93,14 +93,16 @@ export async function computeRollup(pane: string): Promise<WindowRollup> {
   return "idle";
 }
 
-// Write the window-scoped @agent_window_state. Unset when null (no pi).
+// Write the window-scoped @agent_window_state. -w forces WINDOW scope (without
+// it, set-option -t <window> defaults to SESSION scope for user options, so
+// every window in the session would share the same dot). Unset when null.
 export async function setWindowState(pane: string, rollup: WindowRollup): Promise<void> {
   const win = await windowId(pane);
   if (!win) return;
   if (rollup === null) {
-    await run(["set-option", "-u", "-t", win, "@agent_window_state"]);
+    await run(["set-option", "-w", "-u", "-t", win, "@agent_window_state"]);
   } else {
-    await run(["set-option", "-t", win, "@agent_window_state", rollup]);
+    await run(["set-option", "-w", "-t", win, "@agent_window_state", rollup]);
   }
 }
 

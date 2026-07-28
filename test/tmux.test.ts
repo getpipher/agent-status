@@ -115,8 +115,8 @@ test("setWindowState: writes window-scoped @agent_window_state", async () => {
   void winFor;
   await tmux.setWindowState("p0", "working");
   assert.ok(argsFor("set-option").some((a) =>
-    a.includes("@agent_window_state") && a.includes("working") && a.includes("@w")),
-    "wrote window-scoped @agent_window_state=working");
+    a.includes("-w") && a.includes("@agent_window_state") && a.includes("working") && a.includes("@w")),
+    "wrote window-scoped (-w) @agent_window_state=working");
 });
 
 test("setWindowState: null rollup unsets the window option", async () => {
@@ -128,6 +128,6 @@ test("setWindowState: null rollup unsets the window option", async () => {
   });
   await tmux.setWindowState("p0", null);
   assert.ok(argsFor("set-option").some((a) =>
-    a.includes("-u") && a.includes("@agent_window_state")),
-    "unset @agent_window_state when rollup null");
+    a.includes("-w") && a.includes("-u") && a.includes("@agent_window_state")),
+    "unset window-scoped @agent_window_state when rollup null");
 });

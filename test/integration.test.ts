@@ -42,7 +42,7 @@ async function readOpt(target: string, name: string): Promise<string> {
   return (await tmuxRead(["show-options", "-p", "-t", target, name])).trim();
 }
 async function readWinOpt(win: string, name: string): Promise<string> {
-  return (await tmuxRead(["show-options", "-t", win, name])).trim();
+  return (await tmuxRead(["show-options", "-w", "-t", win, name])).trim();
 }
 
 test("real tmux rollup: two panes working+idle → mixed", async () => {
