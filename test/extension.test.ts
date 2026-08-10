@@ -132,3 +132,26 @@ test("session_start without hasUI is ignored", async () => {
   await pi.handlers.get("session_start")!({ reason: "startup" }, { hasUI: false });
   assert.equal(paneState.p0, undefined);
 });
+
+test("quit+restart cycle re-writes pane state (regression: dot gone after /new or /resume)", async () => {
+  // Repro of RECTOR's bug: pi in pane B starts (idle), then does a /new or
+  // /resume (fires session_shutdown quit + session_start). The quit cleared the
+  // tmux @agent_state option, but lastWritten was not reset, so the next
+  // session_start's publish(IDLE) was deduped (idle===idle) and never re-wrote.
+  // Result: pane @agent_state stays unset; when the sibling pane later closes,
+  // applyRollup finds no states -> window_state unset -> dot gone.
+  const stub = statefulStub("p0", ["p0"]);
+  const { paneState, winState } = stub;
+  const pi = fakePi();
+  const { default: agentStatus } = await import("../extensions/agent-status.ts");
+  agentStatus(pi as any);
+  await pi.handlers.get("session_start")!({ reason: "startup" }, { hasUI: true, isIdle: () => true });
+  assert.equal(paneState.p0, "idle");
+  // quit clears the tmux option (e.g. /new, /resume, a reload that emits quit)
+  await pi.handlers.get("session_shutdown")!({ reason: "quit" }, {});
+  assert.equal(paneState.p0, undefined, "pane state cleared on quit");
+  // restart in the same extension instance -> MUST re-write the pane state
+  await pi.handlers.get("session_start")!({ reason: "startup" }, { hasUI: true, isIdle: () => true });
+  assert.equal(paneState.p0, "idle", "pane state re-written after quit+start");
+  assert.equal(winState["@w"], "idle", "window state restored after restart");
+});
