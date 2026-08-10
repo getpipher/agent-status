@@ -43,8 +43,13 @@ export default function agentStatus(pi: ExtensionAPI): void {
   pi.on("session_shutdown", async (e) => {
     const reason = (e as any)?.reason ?? "quit";
     if (reason === "quit") {
-      // this pi is leaving the window — clear its pane state and recompute rollup
+      // this pi is leaving the window — clear its pane state and recompute rollup.
+      // Reset lastWritten so the next session_start publish (e.g. a /new or
+      // /resume that fires quit+start in the same extension instance) actually
+      // re-writes @agent_state — otherwise publish(IDLE) is deduped (idle===idle)
+      // and the pane option stays unset, so the dot silently disappears.
       snap = IDLE;
+      lastWritten = undefined;
       await tmux.clear(paneId);
       await tmux.applyRollup(paneId);
     } else {

@@ -27,6 +27,13 @@ e.g. window `3: getpipher` with one pi working + one pi idle → `● 3: getpiph
 
 ## Status
 
+v0.2.5 — fix: dot vanished after a pi `/new`/`/resume` (quit+start cycle) in a
+window with a sibling pane. The `session_shutdown(quit)` handler cleared the
+pane's `@agent_state` option but didn't reset the in-memory dedup guard, so the
+next `session_start` `publish(IDLE)` was deduped and never re-wrote it. The
+pane silently dropped out of the rollup; when the sibling later closed, the dot
+went with it. Reset `lastWritten` on quit so the next publish always re-writes.
+
 v0.2.0 — window-tab dot + per-window rollup (green/yellow/grey/none). Replaces
 the v0.1.x status-left spinner (which cost status-script re-runs). Non-breaking:
 the extension writes only pane-local `@agent_state` + window-scoped
