@@ -10,6 +10,7 @@ export type AgentEvent =
   | { type: "agent_start" }
   | { type: "tool_execution_start"; toolName: string }
   | { type: "tool_execution_end" }
+  | { type: "agent_end"; settled: boolean }
   | { type: "agent_settled"; isIdle: boolean }
   | { type: "session_shutdown"; reason: string };
 
@@ -26,6 +27,8 @@ export function reduce(prev: StateSnapshot, event: AgentEvent): StateSnapshot {
       return { state: "working", tool: event.toolName };
     case "tool_execution_end":
       return { state: "working", tool: "" };
+    case "agent_end":
+      return event.settled ? IDLE : prev;
     case "agent_settled":
       return event.isIdle ? IDLE : prev;
     case "session_shutdown":

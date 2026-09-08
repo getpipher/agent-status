@@ -37,6 +37,17 @@ export default function agentStatus(pi: ExtensionAPI): void {
     await publish(reduce(snap, { type: "session_start", isIdle: isIdle(ctx) }));
   });
   pi.on("agent_start", async () => { await publish(reduce(snap, { type: "agent_start" })); });
+  // omp never fires agent_settled; its settle signal is agent_end with a
+  // willContinue flag ({ willContinue: true } = queued continuation follows).
+  // ctx.isIdle() is NOT usable here: on omp it is still false at agent_end
+  // time. pi also fires agent_end (no willContinue key) just before
+  // agent_settled — treated as settled; publish()'s lastWritten dedup absorbs
+  // the double-fire.
+  pi.on("agent_end", async (e) => {
+    const willContinue =
+      typeof e === "object" && e !== null && "willContinue" in e && e.willContinue === true;
+    await publish(reduce(snap, { type: "agent_end", settled: !willContinue }));
+  });
   pi.on("agent_settled", async (_e, ctx) => {
     await publish(reduce(snap, { type: "agent_settled", isIdle: isIdle(ctx) }));
   });

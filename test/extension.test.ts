@@ -75,6 +75,49 @@ test("single pi: agent_start → pane working + window working(green); settled �
   assert.equal(winState["@w"], "idle");
 });
 
+test("omp: agent_end (no willContinue key) → idle — omp never fires agent_settled", async () => {
+  const { paneState, winState } = statefulStub("p0", ["p0"]);
+  const pi = fakePi();
+  const { default: agentStatus } = await import("../extensions/agent-status.ts");
+  agentStatus(pi as any);
+
+  await pi.handlers.get("session_start")!({ reason: "startup" }, { hasUI: true, isIdle: () => true });
+  await pi.handlers.get("agent_start")!({}, {});
+  assert.equal(paneState.p0, "working");
+
+  await pi.handlers.get("agent_end")!({ type: "agent_end", messages: [] }, {});
+  assert.equal(paneState.p0, "idle");
+  assert.equal(winState["@w"], "idle");
+});
+
+test("omp: agent_end with willContinue=true stays working (queued continuation)", async () => {
+  const { paneState } = statefulStub("p0", ["p0"]);
+  const pi = fakePi();
+  const { default: agentStatus } = await import("../extensions/agent-status.ts");
+  agentStatus(pi as any);
+
+  await pi.handlers.get("session_start")!({ reason: "startup" }, { hasUI: true, isIdle: () => true });
+  await pi.handlers.get("agent_start")!({}, {});
+  await pi.handlers.get("agent_end")!({ type: "agent_end", messages: [], willContinue: true }, {});
+  assert.equal(paneState.p0, "working");
+});
+
+test("pi double-fire: agent_end(settled) then agent_settled(idle) writes idle exactly once", async () => {
+  const { paneState, calls } = statefulStub("p0", ["p0"]);
+  const pi = fakePi();
+  const { default: agentStatus } = await import("../extensions/agent-status.ts");
+  agentStatus(pi as any);
+
+  await pi.handlers.get("session_start")!({ reason: "startup" }, { hasUI: true, isIdle: () => true });
+  await pi.handlers.get("agent_start")!({}, {});
+  await pi.handlers.get("agent_end")!({ type: "agent_end", messages: [] }, {});
+  await pi.handlers.get("agent_settled")!({}, { isIdle: () => true });
+
+  assert.equal(paneState.p0, "idle");
+  const paneWrites = calls.filter((c) => c[0] === "set-option" && c.includes("@agent_state"));
+  assert.equal(paneWrites.length, 3, "startup idle + working + idle — deduped, no 4th write");
+});
+
 test("two pi panes: mixed rollup → yellow (one working, one idle)", async () => {
   // pane p0 is THIS extension instance; p1 is a sibling whose state we preset.
   const stub = statefulStub("p0", ["p0", "p1"]);

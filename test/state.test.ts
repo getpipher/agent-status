@@ -33,6 +33,15 @@ test("agent_settled while not idle is a no-op (auto-retry/compact may continue)"
   assert.deepEqual(reduce(prev, { type: "agent_settled", isIdle: false }), prev);
 });
 
+test("agent_end settled → IDLE (omp settle signal — omp never fires agent_settled)", () => {
+  assert.deepEqual(reduce({ state: "working", tool: "bash" } as StateSnapshot, { type: "agent_end", settled: true }), IDLE);
+});
+
+test("agent_end not settled keeps working (omp willContinue: queued continuation)", () => {
+  const prev: StateSnapshot = { state: "working", tool: "bash" };
+  assert.deepEqual(reduce(prev, { type: "agent_end", settled: false }), prev);
+});
+
 test("session_shutdown quit → IDLE", () => {
   assert.deepEqual(reduce(WORKING, { type: "session_shutdown", reason: "quit" }), IDLE);
 });

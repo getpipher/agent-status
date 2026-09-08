@@ -27,6 +27,15 @@ e.g. window `3: getpipher` with one pi working + one pi idle → `● 3: getpiph
 
 ## Status
 
+v0.2.6 — fix: omp host support. omp (the Bun fork of pi-mono) never fires
+`agent_settled`, so after the first turn the dot stayed green forever, and its
+`session_shutdown` carries no `reason`, so `/reload`-class shutdowns took the
+quit path. Now also handles omp's settle signal — `agent_end` with
+`willContinue !== true` (pi fires the same event just before
+`agent_settled`; the publish dedup absorbs the double-fire). omp's
+reason-less shutdown remains quit-path by design: it self-heals on the next
+`session_start`. [#10](https://github.com/getpipher/agent-status/issues/10)
+
 v0.2.5 — fix: dot vanished after a pi `/new`/`/resume` (quit+start cycle) in a
 window with a sibling pane. The `session_shutdown(quit)` handler cleared the
 pane's `@agent_state` option but didn't reset the in-memory dedup guard, so the
@@ -44,10 +53,16 @@ and [v0.2 plan](docs/superpowers/plans/2026-07-28-window-dot-rollup.md).
 
 ## Install
 
-Add to `~/.pi/agent/settings.json` `packages`:
+pi — add to `~/.pi/agent/settings.json` `packages`:
 
 ```json
 "npm:@getpipher/agent-status"
+```
+
+omp — install into the omp plugin root:
+
+```sh
+omp plugin install @getpipher/agent-status
 ```
 
 Source the tmux snippet in `~/.tmux.conf` and insert the dot at the start of
