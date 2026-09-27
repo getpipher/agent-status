@@ -176,6 +176,7 @@ test("quit + session_start rewrites pane state (v0.2.5 regression) and clears th
   assert.equal(stub.bootState[pane], undefined); // marker cleared with state on quit
   await fire(pi, "session_start", { type: "session_start" }, { hasUI: true, isIdle: () => true });
   assert.equal(stub.paneState[pane], "idle"); // re-written despite in-memory idle
+  assert.match(stub.bootState[pane]!, /^v0\.2\.\d+$/); // marker re-established after quit cleared it
 });
 
 test("first publish applies the window rollup even with no state change", async () => {
@@ -185,3 +186,40 @@ test("first publish applies the window rollup even with no state change", async 
   await fire(pi, "session_start", { type: "session_start" }, { hasUI: true, isIdle: () => true });
   assert.equal(stub.winState["@w"], "idle");
 });
+
+test("marker restores to plain after a transient write failure recovers", async () => {
+  const pane = "p10";
+  const stub = healStub(pane, [pane]);
+  const pi = await activate(stub, pane);
+  stub.setFailStateWrites(true);
+  await fire(pi, "turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  assert.match(stub.bootState[pane]!, /write-fail\(/);
+  stub.setFailStateWrites(false);
+  await fire(pi, "tool_execution_end", { type: "tool_execution_end", toolCallId: "c1" });
+  assert.match(stub.bootState[pane]!, /^v0\.2\.\d+$/); // plain marker restored
+  assert.equal(stub.paneState[pane], "working");
+});
+
+test("failed idle write is retried by the next idle signal, not absorbed by dedup", async () => {
+  const pane = "p11";
+  const stub = healStub(pane, [pane]);
+  const pi = await activate(stub, pane);
+  await fire(pi, "turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  stub.setFailStateWrites(true);
+  await fire(pi, "agent_end", { type: "agent_end", messages: [] }); // settle write fails
+  assert.equal(stub.paneState[pane], "working"); // still stale-working
+  assert.match(stub.bootState[pane]!, /write-fail\(working\)$/); // diagnostic names the stale value
+  stub.setFailStateWrites(false);
+  await fire(pi, "agent_settled", { type: "agent_settled" }, { hasUI: true, isIdle: () => true });
+  assert.equal(stub.paneState[pane], "idle"); // retried and healed
+  assert.match(stub.bootState[pane]!, /^v0\.2\.\d+$/);
+});
+
+test("EXT_VERSION stays in sync with package.json (marker is the diagnostic trail)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const raw = readFileSync(new URL("../package.json", import.meta.url), "utf8");
+  const declared = /"version":\s*"([^"]+)"/.exec(raw)?.[1];
+  const { EXT_VERSION } = await import("../extensions/agent-status.ts");
+  assert.equal(EXT_VERSION, declared);
+});
+

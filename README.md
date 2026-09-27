@@ -33,17 +33,22 @@ fully mute — `@agent_state` never written, window rollup read the remaining
 idle panes, dot stayed grey while that omp ran subagents for an hour. Fix is
 three-layered. (1) **Heal**: `working` is now always rewritten even when the
 in-memory state already says working, so a lost/cleared pane option recovers on
-the next turn; `turn_start` (fires ~50ms before `agent_start` on omp 18.3.x)
+the next turn; `turn_start` (fires before `agent_start`; measured ~50ms on
+omp 18.3.4, and pi ≥0.85 defines the same event)
 and `tool_execution_start/end` (modeled since v0.1 but never registered) are
 now wired as extra working signals + heal points. (2) **Diagnose**: activation
 writes a pane-local `@agent_status_boot` marker (additive, cleared on quit);
 `marker set + state unset` ⇒ handlers muted after activation, `neither set` ⇒
-extension never ran; a failed write rewrites the marker to
-`vX.Y.Z write-fail(...)` instead of touching stderr (pi raw-mode TUI safety).
-(3) **Contract re-verified live on omp 18.3.4**: `agent_settled` still never
+extension never ran (or its very first marker write failed), a marker reading
+`vX.Y.Z write-fail(...)` ⇒ writes are failing right now; a failed write
+rewrites the marker to that shape instead of touching stderr (pi raw-mode TUI
+safety), and the next verified write restores the plain marker. (3)
+**Contract re-verified live on omp 18.3.4**: `agent_settled` still never
 fires; `agent_end` payload is authoritative; `isIdle()` now reads true at
 `agent_end` (18.1 divergence gone). Verified live: externally unsetting
-`@agent_state` mid-session recovers to working on the next prompt, no restart.
+`@agent_state` mid-session recovers to working on the next prompt, no
+restart. Root-cause observability gap filed upstream:
+[oh-my-pi#13484](https://github.com/can1357/oh-my-pi/issues/13484).
 
 v0.2.6 — fix: omp host support. omp (the Bun fork of pi-mono) never fires
 `agent_settled`, so after the first turn the dot stayed green forever, and its
