@@ -21,12 +21,13 @@ test("setState writes pane-local @agent_state only", async () => {
   ]);
 });
 
-test("clear unsets pane-local @agent_state", async () => {
+test("clear unsets pane-local @agent_state and @agent_status_boot", async () => {
   calls.length = 0;
   await tmux.clear("p0");
   const unsets = argsFor("set-option").filter((a) => a.includes("-u"));
-  assert.equal(unsets.length, 1);
+  assert.equal(unsets.length, 2);
   assert.deepEqual(unsets[0], ["set-option", "-p", "-u", "-t", "p0", "@agent_state"]);
+  assert.deepEqual(unsets[1], ["set-option", "-p", "-u", "-t", "p0", "@agent_status_boot"]);
 });
 
 test("no-op when not in tmux ($TMUX unset)", async () => {

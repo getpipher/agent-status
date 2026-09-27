@@ -49,8 +49,27 @@ export async function setState(pane: string, state: AgentState): Promise<void> {
   await run(["set-option", "-p", "-t", pane, "@agent_state", state]);
 }
 
+// Read back the pane's @agent_state — undefined when unset or unreadable.
+// Used to verify writes actually stuck (tmux failures are otherwise silent).
+export async function getState(pane: string): Promise<AgentState | undefined> {
+  if (!enabled()) return undefined;
+  try {
+    const v = (await exec(["show-options", "-p", "-v", "-t", pane, "@agent_state"])).trim();
+    return v === "working" || v === "idle" ? v : undefined;
+  } catch { return undefined; }
+}
+
+// Boot marker: written once when the extension activates. A pane carrying
+// @agent_status_boot but no @agent_state proves the extension loaded but its
+// handlers/writes went mute afterwards (omp plugin-load skip, lost write) —
+// the distinguishing signal for the "dot stuck grey while omp runs" class.
+export async function setBootMarker(pane: string, version: string): Promise<void> {
+  await run(["set-option", "-p", "-t", pane, "@agent_status_boot", version]);
+}
+
 export async function clear(pane: string): Promise<void> {
   await run(["set-option", "-p", "-u", "-t", pane, "@agent_state"]);
+  await run(["set-option", "-p", "-u", "-t", pane, "@agent_status_boot"]);
 }
 
 // --- Window rollup ------------------------------------------------------------

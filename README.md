@@ -27,6 +27,24 @@ e.g. window `3: getpipher` with one pi working + one pi idle → `● 3: getpiph
 
 ## Status
 
+v0.2.7 — resilience audit against omp 18.3.4 (after the 18.1.x → 18.3.x churn).
+Found in the wild: one long-running omp pane whose extension instance went
+fully mute — `@agent_state` never written, window rollup read the remaining
+idle panes, dot stayed grey while that omp ran subagents for an hour. Fix is
+three-layered. (1) **Heal**: `working` is now always rewritten even when the
+in-memory state already says working, so a lost/cleared pane option recovers on
+the next turn; `turn_start` (fires ~50ms before `agent_start` on omp 18.3.x)
+and `tool_execution_start/end` (modeled since v0.1 but never registered) are
+now wired as extra working signals + heal points. (2) **Diagnose**: activation
+writes a pane-local `@agent_status_boot` marker (additive, cleared on quit);
+`marker set + state unset` ⇒ handlers muted after activation, `neither set` ⇒
+extension never ran; a failed write rewrites the marker to
+`vX.Y.Z write-fail(...)` instead of touching stderr (pi raw-mode TUI safety).
+(3) **Contract re-verified live on omp 18.3.4**: `agent_settled` still never
+fires; `agent_end` payload is authoritative; `isIdle()` now reads true at
+`agent_end` (18.1 divergence gone). Verified live: externally unsetting
+`@agent_state` mid-session recovers to working on the next prompt, no restart.
+
 v0.2.6 — fix: omp host support. omp (the Bun fork of pi-mono) never fires
 `agent_settled`, so after the first turn the dot stayed green forever, and its
 `session_shutdown` carries no `reason`, so `/reload`-class shutdowns took the
@@ -46,7 +64,8 @@ went with it. Reset `lastWritten` on quit so the next publish always re-writes.
 v0.2.0 — window-tab dot + per-window rollup (green/yellow/grey/none). Replaces
 the v0.1.x status-left spinner (which cost status-script re-runs). Non-breaking:
 the extension writes only pane-local `@agent_state` + window-scoped
-`@agent_window_state`; the snippet defines one new user option `@agent_window_dot`
+`@agent_window_state` (plus the pane-local diagnostic `@agent_status_boot`
+since v0.2.7); the snippet defines one new user option `@agent_window_dot`
 and never sets `status-left`/`window-status-*` — you merge the dot into your own
 window-status format. See the [design spec](docs/superpowers/specs/2026-07-27-agent-status-tmux-design.md)
 and [v0.2 plan](docs/superpowers/plans/2026-07-28-window-dot-rollup.md).
